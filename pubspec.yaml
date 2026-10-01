@@ -1,7 +1,7 @@
 name: color_gravity
 description: "Color Gravity - a color + gravity arcade game for Android."
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.0+1
 
 environment:
   sdk: '>=3.4.0 <4.0.0'

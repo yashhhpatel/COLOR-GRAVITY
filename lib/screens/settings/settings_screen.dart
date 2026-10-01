@@ -159,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ]),
                     ),
                     const SizedBox(height: 18),
-                    Center(child: Text('Color Gravity · v1.0.1', style: AppText.label.copyWith(color: AppColors.textMute))),
+                    Center(child: Text('Color Gravity · v1.0.0', style: AppText.label.copyWith(color: AppColors.textMute))),
                   ]),
                 ),
               ]);
