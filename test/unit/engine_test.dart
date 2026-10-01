@@ -317,4 +317,24 @@ void main() {
       }
     });
   });
+
+  test('banners never overlap the tutorial prompt', () {
+    final e = GameEngine(level: LevelGenerator.load(1));
+    var sawPrompt = false, overlap = false, bannerAfterPrompt = false;
+    for (var i = 0; i < 60 * 12; i++) {
+      final p = e.hud.prompt.value;
+      if (p != null) {
+        sawPrompt = true;
+        if (e.hud.banner.value != null) overlap = true;
+        if (i % 30 == 0) e.onDrag(const Offset(30, 0)); // eventually completes the drag prompt
+      } else if (sawPrompt && e.hud.banner.value != null) {
+        bannerAfterPrompt = true;
+      }
+      e.player.invuln = 5;
+      e.update(1 / 60);
+    }
+    expect(sawPrompt, isTrue);
+    expect(overlap, isFalse);
+    expect(bannerAfterPrompt, isTrue, reason: 'the deferred banner still shows afterwards');
+  });
 }

@@ -48,3 +48,5 @@ tool/_wav/
 android/key.properties
 *.jks
 *.keystore
+release/
+*.apk

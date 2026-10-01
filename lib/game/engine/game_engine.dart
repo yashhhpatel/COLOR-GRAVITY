@@ -385,13 +385,18 @@ class GameEngine extends ChangeNotifier {
     for (final h in _hints) {
       h.y += scroll;
       if (h.y >= 70 && h.alive) {
-        h.alive = false;
         if (h.value != HintAction.none) {
+          h.alive = false;
           // Swipe prompt already satisfied?
           if (h.value == HintAction.swipe && h.dir == gravity.dir) continue;
           hud.prompt.value = TutorialPrompt(h.text ?? '', h.value, h.dir);
           _dragAccum = 0;
-        } else {
+          // One message at a time: the coach prompt replaces any banner.
+          hud.banner.value = null;
+          _bannerTimer = 0;
+        } else if (hud.prompt.value == null) {
+          // Banners wait until the tutorial prompt has been completed.
+          h.alive = false;
           hud.banner.value = h.text;
           _bannerTimer = 2.6;
         }
