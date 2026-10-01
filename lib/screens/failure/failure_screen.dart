@@ -13,6 +13,7 @@ class FailureScreen extends StatefulWidget {
     required this.onRetry,
     required this.onHome,
     this.onContinue,
+    this.onRetryCheckpoint,
     this.endless = false,
     this.bestScore,
     this.bestDistance,
@@ -23,6 +24,9 @@ class FailureScreen extends StatefulWidget {
   final VoidCallback onRetry;
   final VoidCallback onHome;
   final Future<void> Function()? onContinue;
+
+  /// Hard / Very Hard levels: resume from the checkpoint that was reached.
+  final VoidCallback? onRetryCheckpoint;
   final bool endless;
   final int? bestScore;
   final int? bestDistance;
@@ -100,7 +104,12 @@ class _FailureScreenState extends State<FailureScreen> with SingleTickerProvider
                       Text('NEW BEST SCORE!', style: AppText.heading.copyWith(color: AppColors.success)),
                     ],
                     const SizedBox(height: 18),
-                    PrimaryButton(label: 'Retry', icon: Icons.replay_rounded, onTap: widget.onRetry),
+                    if (widget.onRetryCheckpoint != null) ...[
+                      PrimaryButton(label: 'Retry from Checkpoint', icon: Icons.flag_rounded, onTap: widget.onRetryCheckpoint),
+                      const SizedBox(height: 10),
+                      SecondaryButton(label: 'Restart Level', icon: Icons.replay_rounded, onTap: widget.onRetry),
+                    ] else
+                      PrimaryButton(label: 'Retry', icon: Icons.replay_rounded, onTap: widget.onRetry),
                     const SizedBox(height: 10),
                     SecondaryButton(label: 'Home', icon: Icons.home_rounded, onTap: widget.onHome),
                     if (widget.onContinue != null) ...[

@@ -87,6 +87,8 @@ class GamePainter extends CustomPainter {
           _paintGravitySwitch(canvas, en, time);
         case EntityKind.finish:
           _paintFinish(canvas, en);
+        case EntityKind.checkpoint:
+          _paintCheckpoint(canvas, en, time);
         default:
           break;
       }
@@ -375,7 +377,7 @@ class GamePainter extends CustomPainter {
       final r = s.rect;
       _fill
         ..shader = null
-        ..color = c.color.withOpacity(0.55 + s.flash);
+        ..color = c.color.withOpacity((0.55 + s.flash).clamp(0.0, 1.0));
       canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), _fill);
       _fill.color = _white.withOpacity(0.85);
       for (var x = r.left + 22.0; x < r.right; x += 44) {
@@ -423,6 +425,39 @@ class GamePainter extends CustomPainter {
     }
   }
 
+  void _paintCheckpoint(Canvas canvas, Entity c, double time) {
+    const teal = Color(0xFF5CF2C2);
+    final r = c.rect;
+    final y = r.center.dy;
+    if (c.passed) {
+      _fill
+        ..shader = null
+        ..color = teal.withOpacity(0.10 + c.flash * 0.6);
+      canvas.drawRect(r.inflate(4), _fill);
+    }
+    _stroke
+      ..strokeWidth = 3
+      ..color = teal.withOpacity(c.passed ? 0.45 : 0.9);
+    final shift = (time * 24) % 18;
+    for (var x = r.left - 18 + shift; x < r.right; x += 18) {
+      canvas.drawLine(Offset(math.max(x, r.left), y), Offset(math.min(x + 10, r.right), y), _stroke);
+    }
+    // Flag on the left wall.
+    _stroke
+      ..strokeWidth = 2
+      ..color = teal;
+    canvas.drawLine(Offset(r.left + 14, y), Offset(r.left + 14, y - 26), _stroke);
+    _fill.color = teal;
+    canvas.drawPath(
+        Path()
+          ..moveTo(r.left + 15, y - 26)
+          ..lineTo(r.left + 32 + math.sin(time * 6) * 2, y - 21)
+          ..lineTo(r.left + 15, y - 16)
+          ..close(),
+        _fill);
+    _label(canvas, 'CHECKPOINT', Offset(r.center.dx, y - 12), 10, teal);
+  }
+
   void _paintFinish(Canvas canvas, Entity f) {
     final r = f.rect;
     const sq = 12.0;
@@ -464,7 +499,7 @@ class GamePainter extends CustomPainter {
         canvas.restore();
         _stroke
           ..strokeWidth = 2
-          ..color = (colored?.color ?? _hazardEdge).withOpacity((0.85 + h.flash) * alpha);
+          ..color = (colored?.color ?? _hazardEdge).withOpacity(((0.85 + h.flash) * alpha).clamp(0.0, 1.0));
         canvas.drawRRect(rr, _stroke);
         if (h.motion == BlockMotion.crusher) {
           final gv = engine.gravity.dir;

@@ -82,6 +82,9 @@ class SegmentBuilder {
       ctx.cursor += s.length;
     }
     if (config.tutorial) _tutorialHints(starts);
+    if (config.kind == RunKind.level && !config.tutorial && config.tier.index >= DifficultyTier.hard.index) {
+      _placeCheckpoint(starts);
+    }
     ctx.out.sort((a, b) => a.trackY.compareTo(b.trackY));
     return LevelPlan(ctx.out, ctx.cursor);
   }
@@ -249,6 +252,28 @@ class SegmentBuilder {
     final lvl = config.levelId;
     if (config.kind == RunKind.level && lvl >= m.unlockLevel && lvl <= m.unlockLevel + 1) {
       hint(o, text);
+    }
+  }
+
+  /// Hard / Very Hard levels get one checkpoint at a clean segment boundary
+  /// near the middle (no object straddles it, nothing lethal right after it).
+  void _placeCheckpoint(List<double> starts) {
+    final mid = ctx.cursor / 2;
+    final candidates = [
+      for (var i = 2; i < starts.length - 1; i++)
+        if (config.segments[i].type != SegmentType.finish) starts[i],
+    ]..sort((a, b) => (a - mid).abs().compareTo((b - mid).abs()));
+    for (final b in candidates) {
+      final clean = ctx.out.every((e) {
+        if (e.kind == EntityKind.hint) return true;
+        final ext = e.kind == EntityKind.rotor ? e.w / 2 : e.halfExtent;
+        if (e.trackY < b) return e.trackY + ext < b - 10;
+        return e.trackY - ext > b + 30;
+      });
+      if (clean) {
+        ctx.out.add(Entity(kind: EntityKind.checkpoint, x: cx, w: fullW, h: 10)..trackY = b);
+        return;
+      }
     }
   }
 

@@ -155,10 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                         _divider(),
-                        _LinkRow(
-                            icon: Icons.privacy_tip_rounded,
-                            title: 'Privacy Policy',
-                            onTap: _openPrivacy),
+                        _LinkRow(icon: Icons.privacy_tip_rounded, title: 'Privacy Policy', onTap: _openPrivacy),
                       ]),
                     ),
                     const SizedBox(height: 18),

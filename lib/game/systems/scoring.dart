@@ -59,4 +59,32 @@ class RunStats {
   String? failReason;
 
   int get perfectActions => perfectShifts + perfectDodges + perfectGates + perfectMerges + perfectMatches;
+
+  /// Snapshot used for checkpoints.
+  RunStats copy() {
+    final c = RunStats()
+      ..score = score
+      ..coins = coins
+      ..orbsCollected = orbsCollected
+      ..colorMatches = colorMatches
+      ..merges = merges
+      ..chainMerges = chainMerges
+      ..maxMergeLevel = maxMergeLevel
+      ..gravityShifts = gravityShifts
+      ..perfectShifts = perfectShifts
+      ..perfectDodges = perfectDodges
+      ..perfectGates = perfectGates
+      ..perfectMerges = perfectMerges
+      ..perfectMatches = perfectMatches
+      ..gatesPassed = gatesPassed
+      ..hits = hits
+      ..powerUpsUsed = powerUpsUsed
+      ..maxCombo = maxCombo
+      ..deliveries = deliveries
+      ..distance = distance
+      ..time = time;
+    c.shiftsByDir.addAll(shiftsByDir);
+    c.colorHistory.addAll(colorHistory);
+    return c;
+  }
 }

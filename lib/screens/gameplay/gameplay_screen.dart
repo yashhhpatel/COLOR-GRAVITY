@@ -24,23 +24,28 @@ import '../result/result_screen.dart';
 import 'hud.dart';
 
 class RunRequest {
-  const RunRequest.level(this.level, {this.withShield = false})
+  const RunRequest.level(this.level, {this.withShield = false, this.resume})
       : kind = RunKind.level,
         seed = 0;
   const RunRequest.daily()
       : kind = RunKind.daily,
         level = 0,
         withShield = false,
+        resume = null,
         seed = 0;
   const RunRequest.endless({this.seed = 0})
       : kind = RunKind.endless,
         level = 0,
-        withShield = false;
+        withShield = false,
+        resume = null;
 
   final RunKind kind;
   final int level;
   final bool withShield;
   final int seed;
+
+  /// Resume a Hard / Very Hard level from its checkpoint.
+  final CheckpointState? resume;
 }
 
 class GameplayScreen extends StatefulWidget {
@@ -72,6 +77,13 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
   RunReward? _reward;
   int? _prevEndlessBest;
 
+  // Coins flying into the HUD counter.
+  final GlobalKey _coinKey = GlobalKey();
+  final ValueNotifier<int> _coinBump = ValueNotifier(0);
+  final List<(int, Offset, Offset)> _flyers = [];
+  int _flyerId = 0;
+  Size _size = Size.zero;
+
   // Gesture tracking
   Offset _panTotal = Offset.zero;
   DateTime _panStart = DateTime.now();
@@ -89,7 +101,7 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
       RunKind.endless =>
         LevelGenerator.endless(widget.request.seed == 0 ? DateTime.now().millisecondsSinceEpoch & 0xFFFFFF : widget.request.seed),
     };
-    _engine = GameEngine(level: _level, loadout: _s.progress.loadout);
+    _engine = GameEngine(level: _level, loadout: _s.progress.loadout, resume: widget.request.resume);
     if (widget.request.withShield) _engine.player.shield = true;
     GameplayScreen.debugEngine = _engine;
     _prevEndlessBest = _s.progress.data.endlessBestScore;
@@ -133,7 +145,11 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
       case GameEventType.mismatch:
         a.play(Sfx.move, volume: 0.6);
         h.fire(Haptic.selection);
+      case GameEventType.checkpoint:
+        a.play(Sfx.perfect);
+        h.fire(Haptic.medium);
       case GameEventType.coin:
+        _flyCoin(ev);
         a.play(Sfx.coin, volume: 0.5);
       case GameEventType.merge:
         a.play(Sfx.merge);
@@ -210,9 +226,20 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
     }
   }
 
+  void _flyCoin(GameEvent ev) {
+    if (_flyers.length >= 10 || _size == Size.zero) return;
+    final box = _coinKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+    final t = ArenaTransform(_size);
+    final from = t.offset + Offset(ev.x, ev.y) * t.scale;
+    final to = box.localToGlobal(box.size.center(Offset.zero));
+    setState(() => _flyers.add((_flyerId++, from, to)));
+  }
+
   @override
   void dispose() {
     if (_engine.phase == RunPhase.failed) _recordFailureOnce();
+    _coinBump.dispose();
     _ticker.dispose();
     _engine.dispose();
     super.dispose();
@@ -227,6 +254,18 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
   }
 
   void _retry() => _leave(() => GameplayScreen(request: widget.request));
+
+  /// Restart the whole level (drops any checkpoint).
+  void _restartLevel() => _leave(() => GameplayScreen(request: RunRequest.level(_level.config.levelId)));
+
+  /// Resume from the last checkpoint. The failed attempt is not recorded so
+  /// stats before the checkpoint are not counted twice.
+  void _retryFromCheckpoint() {
+    final cp = _engine.checkpoint;
+    if (cp == null) return _retry();
+    _recorded = true;
+    _leave(() => GameplayScreen(request: RunRequest.level(_level.config.levelId, resume: cp)));
+  }
 
   void _next() {
     final l = _level.config.levelId;
@@ -325,6 +364,7 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
         backgroundColor: AppColors.bgDeep,
         body: LayoutBuilder(builder: (context, box) {
           final scale = math.min(box.maxWidth / Arena.width, box.maxHeight / Arena.height);
+          _size = box.biggest;
           return Stack(fit: StackFit.expand, children: [
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -333,7 +373,18 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
               onPanEnd: (d) => _onPanEnd(d, scale),
               child: RepaintBoundary(child: CustomPaint(painter: _painter, size: Size.infinite)),
             ),
-            GameHud(engine: _engine, title: _title, onPause: () => _setPaused(true)),
+            HitVignette(hud: _engine.hud),
+            GameHud(engine: _engine, title: _title, onPause: () => _setPaused(true), coinKey: _coinKey, coinBump: _coinBump),
+            for (final (id, from, to) in _flyers)
+              FlyingCoin(
+                key: ValueKey(id),
+                from: from,
+                to: to,
+                onDone: () {
+                  setState(() => _flyers.removeWhere((f) => f.$1 == id));
+                  _coinBump.value++;
+                },
+              ),
             Positioned(
               left: 0,
               right: 0,
@@ -352,7 +403,7 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
                 bottom: MediaQuery.of(context).padding.bottom + 12,
                 child: GravityPad(onDir: _engine.onSwipe),
               ),
-            if (_introVisible) _IntroCard(title: _title, config: cfg),
+            if (_introVisible) _IntroCard(title: _title, config: cfg, resumed: _engine.resumed),
             if (_paused) _PauseOverlay(onResume: () => _setPaused(false), onRestart: _retry, onHome: _home),
             if (_showFailure)
               FailureScreen(
@@ -360,7 +411,8 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
                 progress: _engine.progress,
                 endless: _kind == RunKind.endless,
                 bestScore: _kind == RunKind.endless ? _prevEndlessBest : null,
-                onRetry: _retry,
+                onRetry: _engine.checkpoint != null && _kind == RunKind.level ? _restartLevel : _retry,
+                onRetryCheckpoint: _engine.checkpoint != null && _kind == RunKind.level ? _retryFromCheckpoint : null,
                 onHome: _home,
                 onContinue: !_continueUsed && !cfg.tutorial && _kind != RunKind.daily ? _continueWithAd : null,
               ),
@@ -383,7 +435,8 @@ class _GameplayScreenState extends State<GameplayScreen> with SingleTickerProvid
 }
 
 class _IntroCard extends StatelessWidget {
-  const _IntroCard({required this.title, required this.config});
+  const _IntroCard({required this.title, required this.config, this.resumed = false});
+  final bool resumed;
   final String title;
   final LevelConfig config;
   @override
@@ -409,6 +462,10 @@ class _IntroCard extends StatelessWidget {
                   style: AppText.label.copyWith(color: world.accent, letterSpacing: 2)),
               const SizedBox(height: 6),
               Text(title, textAlign: TextAlign.center, style: AppText.title.copyWith(fontSize: 28)),
+              if (resumed) ...[
+                const SizedBox(height: 8),
+                const TierBadge(label: 'From checkpoint', color: Color(0xFF5CF2C2), small: true),
+              ],
               if (config.kind == RunKind.level && !config.tutorial) ...[
                 const SizedBox(height: 8),
                 Row(mainAxisSize: MainAxisSize.min, children: [

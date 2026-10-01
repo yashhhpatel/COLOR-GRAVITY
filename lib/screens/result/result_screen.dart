@@ -153,6 +153,26 @@ class _ResultScreenState extends State<ResultScreen> with TickerProviderStateMix
                     ]),
                   ),
                 ),
+                if (r.missions.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  for (final m in r.missions)
+                    FadeSlideIn(
+                      delay: const Duration(milliseconds: 700),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: GlassCard(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          border: AppColors.success.withOpacity(0.5),
+                          child: Row(children: [
+                            Icon(m.metric.icon, color: AppColors.success),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text('Mission complete · ${m.title}', style: AppText.body)),
+                            Text('Claim on Home', style: AppText.label.copyWith(color: AppColors.coin, fontSize: 10)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                ],
                 if (r.unlocked.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   for (final a in r.unlocked)

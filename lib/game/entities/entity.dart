@@ -22,6 +22,7 @@ enum EntityKind {
   powerUp,
   special, // bomb, gravity bomb, gravity core, color core
   finish,
+  checkpoint, // Hard / Very Hard levels: retry resumes here
   hint, // tutorial / mechanic intro text marker (invisible)
 }
 

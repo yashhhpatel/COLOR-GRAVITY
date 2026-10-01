@@ -38,13 +38,26 @@ enum GameEventType {
   bomb,
   delivery,
   tutorialDone,
+  checkpoint,
 }
 
 class GameEvent {
-  const GameEvent(this.type, {this.text, this.value = 0});
+  const GameEvent(this.type, {this.text, this.value = 0, this.x = 0, this.y = 0});
   final GameEventType type;
   final String? text;
   final int value;
+
+  /// Arena position of the event (used for coins flying to the HUD).
+  final double x, y;
+}
+
+/// Where a Hard / Very Hard run resumes after "Retry from Checkpoint".
+class CheckpointState {
+  const CheckpointState({required this.track, required this.color, required this.gravity, required this.stats});
+  final double track;
+  final GameColor color;
+  final GravityDir gravity;
+  final RunStats stats;
 }
 
 enum RunPhase { playing, paused, completed, failed }
@@ -88,6 +101,12 @@ class HudState {
   final prompt = ValueNotifier<TutorialPrompt?>(null);
   final powerUps = ValueNotifier<List<(PowerUpType, double)>>(const []);
   final mission = ValueNotifier<String?>(null);
+
+  /// Increments on every lost heart (drives the heart shake + red vignette).
+  final hitPulse = ValueNotifier<int>(0);
+
+  /// Remaining combo window 0..1 (0 when no combo is running).
+  final comboTime = ValueNotifier<double>(0);
   String _powerSig = '';
 
   void setPowerUps(Map<PowerUpType, double> active) {
@@ -116,7 +135,9 @@ class HudState {
       banner,
       prompt,
       powerUps,
-      mission
+      mission,
+      hitPulse,
+      comboTime,
     ]) {
       n.dispose();
     }
@@ -126,20 +147,37 @@ class HudState {
 /// Runs one Color Gravity session: level, daily challenge or endless.
 /// Pure simulation — rendering, audio and haptics react to [drainEvents].
 class GameEngine extends ChangeNotifier {
-  GameEngine({required this.level, this.loadout = const Loadout()})
+  GameEngine({required this.level, this.loadout = const Loadout(), CheckpointState? resume})
       : speed = level.config.speed,
-        player = Player(level.config.startingColor, level.config.hearts) {
+        stats = resume?.stats.copy() ?? RunStats(),
+        player = Player(resume?.color ?? level.config.startingColor, level.config.hearts) {
     gravity = GravitySystem(
-      initial: config.startingGravity,
+      initial: resume?.gravity ?? config.startingGravity,
       smooth: config.smoothGravity,
       mode: config.gravityMode,
       interval: config.gravityInterval,
     );
-    stats.colorHistory.add(player.color);
+    if (resume == null) stats.colorHistory.add(player.color);
     final finish = level.plan.entities.where((e) => e.kind == EntityKind.finish);
     _finishTrack = finish.isEmpty ? double.infinity : finish.first.trackY;
     _endlessRng = math.Random(config.seed);
+    if (resume != null) _resumeFrom(resume);
     _syncHud();
+  }
+
+  /// Run-up distance shown before the checkpoint line when resuming.
+  static const double resumeRunUp = 260;
+
+  void _resumeFrom(CheckpointState cp) {
+    checkpoint = cp;
+    resumed = true;
+    // The checkpoint line starts [resumeRunUp] above the resting player.
+    traveled = cp.track - (Arena.height - player.y) - resumeRunUp;
+    final plan = level.plan.entities;
+    while (_spawnIndex < plan.length && plan[_spawnIndex].trackY <= cp.track) {
+      _spawnIndex++;
+    }
+    player.invuln = 1.5;
   }
 
   final LoadedLevel level;
@@ -150,7 +188,7 @@ class GameEngine extends ChangeNotifier {
   final ColorSystem colors = const ColorSystem();
   late final GravitySystem gravity;
   final ComboSystem combo = ComboSystem();
-  final RunStats stats = RunStats();
+  final RunStats stats;
   final ParticlePool particles = ParticlePool();
   final List<FloatingText> texts = [];
   final GameCamera camera = GameCamera();
@@ -168,6 +206,12 @@ class GameEngine extends ChangeNotifier {
   int stars = 0;
   bool continued = false;
   bool usedPowerUp = false;
+
+  /// Last checkpoint reached in this run (null if none).
+  CheckpointState? checkpoint;
+
+  /// This run started from a checkpoint.
+  bool resumed = false;
 
   double _hitStop = 0;
   int _spawnIndex = 0;
@@ -673,7 +717,7 @@ class GameEngine extends ChangeNotifier {
             stats.coins += v;
             stats.score += 5;
             particles.emit(x: e.x, y: e.y, color: const Color(0xFFFFC23D), count: 5, speed: 90, life: 0.35, size: 2);
-            _emit(GameEventType.coin);
+            _emit(GameEventType.coin, x: e.x, y: e.y);
           }
         case EntityKind.block:
         case EntityKind.spikes:
@@ -705,6 +749,15 @@ class GameEngine extends ChangeNotifier {
               Collision.circleCircle(p.x, p.y, r, e.x, e.y, e.r) &&
               (e.triggerColor == null || e.triggerColor == p.color)) {
             _triggerSwitch(e);
+          }
+        case EntityKind.checkpoint:
+          if (!e.passed && e.y >= p.y) {
+            e.passed = true;
+            e.flash = 0.6;
+            checkpoint = CheckpointState(track: e.trackY, color: p.color, gravity: gravity.dir, stats: stats.copy());
+            _text('CHECKPOINT', Arena.width / 2, p.y - 60, const Color(0xFF5CF2C2), big: true);
+            particles.emit(x: p.x, y: p.y, color: const Color(0xFF5CF2C2), count: 18, speed: 200, life: 0.6);
+            _emit(GameEventType.checkpoint);
           }
         case EntityKind.gravityZone:
           if (e.rect.contains(Offset(p.x, p.y))) inZone = e;
@@ -927,6 +980,7 @@ class GameEngine extends ChangeNotifier {
     }
     p.hearts--;
     stats.hits++;
+    hud.hitPulse.value++;
     combo.breakCombo();
     p.invuln = GameTiming.invulnerable;
     camera.shake(10);
@@ -1053,7 +1107,8 @@ class GameEngine extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------------ utils
-  void _emit(GameEventType t, {String? text, int value = 0}) => _events.add(GameEvent(t, text: text, value: value));
+  void _emit(GameEventType t, {String? text, int value = 0, double x = 0, double y = 0}) =>
+      _events.add(GameEvent(t, text: text, value: value, x: x, y: y));
 
   void _text(String s, double x, double y, Color c, {bool big = false}) {
     if (texts.length > 10) texts.removeAt(0);
@@ -1069,6 +1124,7 @@ class GameEngine extends ChangeNotifier {
     hud.score.value = stats.score;
     hud.coins.value = stats.coins;
     hud.combo.value = combo.combo;
+    hud.comboTime.value = combo.combo >= 2 ? ((combo.timer / GameTiming.comboWindow) * 20).ceil() / 20 : 0;
     hud.hearts.value = player.hearts;
     hud.shield.value = player.shield;
     hud.gravity.value = gravity.dir;

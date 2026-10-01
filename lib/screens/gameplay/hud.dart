@@ -13,10 +13,21 @@ import '../../widgets/common/ui.dart';
 
 /// Minimal gameplay HUD. Each piece listens to its own notifier.
 class GameHud extends StatelessWidget {
-  const GameHud({super.key, required this.engine, required this.title, required this.onPause});
+  const GameHud({
+    super.key,
+    required this.engine,
+    required this.title,
+    required this.onPause,
+    this.coinKey,
+    this.coinBump,
+  });
   final GameEngine engine;
   final String title;
   final VoidCallback onPause;
+
+  /// Target of coins flying into the HUD, and a counter that pops on arrival.
+  final GlobalKey? coinKey;
+  final ValueNotifier<int>? coinBump;
 
   @override
   Widget build(BuildContext context) {
@@ -68,11 +79,21 @@ class GameHud extends StatelessWidget {
               const SizedBox(width: 10),
               ValueListenableBuilder<int>(
                 valueListenable: hud.coins,
-                builder: (_, v, __) => Row(mainAxisSize: MainAxisSize.min, children: [
-                  const CoinIcon(size: 15),
-                  const SizedBox(width: 4),
-                  Text('$v', style: AppText.number.copyWith(fontSize: 14)),
-                ]),
+                builder: (_, v, __) => ValueListenableBuilder<int>(
+                  valueListenable: coinBump ?? ValueNotifier(0),
+                  builder: (_, bump, __) => TweenAnimationBuilder<double>(
+                    key: ValueKey(bump),
+                    tween: Tween(begin: bump == 0 ? 1 : 1.35, end: 1),
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.easeOutBack,
+                    builder: (_, s, child) => Transform.scale(scale: s, child: child),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      CoinIcon(key: coinKey, size: 15),
+                      const SizedBox(width: 4),
+                      Text('$v', style: AppText.number.copyWith(fontSize: 14)),
+                    ]),
+                  ),
+                ),
               ),
               const SizedBox(width: 10),
               ValueListenableBuilder<int>(
@@ -86,7 +107,28 @@ class GameHud extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration:
                               BoxDecoration(color: AppColors.star.withOpacity(0.18), borderRadius: BorderRadius.circular(10)),
-                          child: Text('x$c', style: AppText.number.copyWith(fontSize: 13, color: AppColors.star)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            // Remaining combo window: keep chaining before it empties.
+                            ValueListenableBuilder<double>(
+                              valueListenable: hud.comboTime,
+                              builder: (_, f, __) => SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: TweenAnimationBuilder<double>(
+                                  tween: Tween(end: f),
+                                  duration: const Duration(milliseconds: 160),
+                                  builder: (_, v, __) => CircularProgressIndicator(
+                                    value: v,
+                                    strokeWidth: 2.2,
+                                    color: AppColors.star,
+                                    backgroundColor: AppColors.star.withOpacity(0.2),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Text('x$c', style: AppText.number.copyWith(fontSize: 13, color: AppColors.star)),
+                          ]),
                         )
                       : const SizedBox.shrink(),
                 ),
@@ -119,22 +161,30 @@ class _Hearts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([engine.hud.hearts, engine.hud.shield]),
+      animation: Listenable.merge([engine.hud.hearts, engine.hud.shield, engine.hud.hitPulse]),
       builder: (_, __) {
         final h = engine.hud.hearts.value;
         final max = engine.config.hearts;
-        return Row(mainAxisSize: MainAxisSize.min, children: [
-          for (var i = 0; i < max; i++)
-            Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: AnimatedScale(
-                scale: i < h ? 1 : 0.8,
-                duration: const Duration(milliseconds: 200),
-                child: Icon(Icons.favorite_rounded, size: 17, color: i < h ? AppColors.danger : AppColors.locked),
+        final pulse = engine.hud.hitPulse.value;
+        // Shake the hearts each time one is lost.
+        return TweenAnimationBuilder<double>(
+          key: ValueKey(pulse),
+          tween: Tween(begin: pulse == 0 ? 1 : 0, end: 1),
+          duration: const Duration(milliseconds: 480),
+          builder: (_, t, child) => Transform.translate(offset: Offset(math.sin(t * math.pi * 6) * (1 - t) * 7, 0), child: child),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (var i = 0; i < max; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 2),
+                child: AnimatedScale(
+                  scale: i < h ? 1 : 0.8,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(Icons.favorite_rounded, size: 17, color: i < h ? AppColors.danger : AppColors.locked),
+                ),
               ),
-            ),
-          if (engine.hud.shield.value) const Icon(Icons.shield_rounded, size: 17, color: Color(0xFF9FD8FF)),
-        ]);
+            if (engine.hud.shield.value) const Icon(Icons.shield_rounded, size: 17, color: Color(0xFF9FD8FF)),
+          ]),
+        );
       },
     );
   }
@@ -410,6 +460,105 @@ class GravityPad extends StatelessWidget {
         Positioned(left: 0, top: 53, child: _btn(GravityDir.left)),
         Positioned(right: 0, top: 53, child: _btn(GravityDir.right)),
       ]),
+    );
+  }
+}
+
+/// Brief red edge flash whenever a heart is lost.
+class HitVignette extends StatefulWidget {
+  const HitVignette({super.key, required this.hud});
+  final HudState hud;
+  @override
+  State<HitVignette> createState() => _HitVignetteState();
+}
+
+class _HitVignetteState extends State<HitVignette> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 520), value: 1);
+    widget.hud.hitPulse.addListener(_flash);
+  }
+
+  void _flash() => _c.forward(from: 0);
+
+  @override
+  void dispose() {
+    widget.hud.hitPulse.removeListener(_flash);
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (_, __) {
+          final a = (1 - _c.value) * 0.55;
+          if (a <= 0.01) return const SizedBox.shrink();
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                radius: 0.95,
+                colors: [Colors.transparent, AppColors.danger.withOpacity(a)],
+                stops: const [0.6, 1],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A collected coin arcing from the track into the HUD counter.
+class FlyingCoin extends StatefulWidget {
+  const FlyingCoin({super.key, required this.from, required this.to, required this.onDone});
+  final Offset from;
+  final Offset to;
+  final VoidCallback onDone;
+  @override
+  State<FlyingCoin> createState() => _FlyingCoinState();
+}
+
+class _FlyingCoinState extends State<FlyingCoin> with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 560))
+      ..forward().whenComplete(() {
+        if (mounted) widget.onDone();
+      });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) {
+        final t = Curves.easeInCubic.transform(_c.value);
+        final a = widget.from, b = widget.to;
+        // Quadratic arc: swing out sideways, then into the counter.
+        final ctrl = Offset(a.dx + (a.dx < b.dx ? -60 : 60), (a.dy + b.dy) / 2);
+        final p = a * ((1 - t) * (1 - t)) + ctrl * (2 * (1 - t) * t) + b * (t * t);
+        final size = 20 - 6 * t;
+        return Positioned(
+          left: p.dx - size / 2,
+          top: p.dy - size / 2,
+          child: IgnorePointer(child: CoinIcon(size: size)),
+        );
+      },
     );
   }
 }

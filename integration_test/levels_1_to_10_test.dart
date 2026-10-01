@@ -43,7 +43,6 @@ void main() {
       expect(engine.config.levelId, level);
       var t = 0.0;
       var lastShift = 0.0;
-      var shiftStep = 0;
       final rng = math.Random(level);
       while (engine.phase != RunPhase.completed && t < 120) {
         if (engine.phase == RunPhase.failed) {
@@ -55,11 +54,11 @@ void main() {
         final p = engine.hud.prompt.value;
         if (p != null) {
           p.dir != null ? engine.onSwipe(p.dir!) : engine.onDrag(const Offset(50, 0));
+        } else if (engine.config.swipeEnabled && engine.gravity.dir == GravityDir.up && t - lastShift > 0.4) {
+          engine.onSwipe(GravityDir.down); // quick up/down hop, then stay low to catch orbs
         } else if (t - lastShift > 2.5 && engine.config.swipeEnabled) {
           lastShift = t;
-          final up = shiftStep.isEven;
-          shiftStep++;
-          engine.onSwipe(up ? GravityDir.up : GravityDir.down);
+          engine.onSwipe(GravityDir.up);
         }
         await tester.pump(const Duration(milliseconds: 33));
         t += 0.033;

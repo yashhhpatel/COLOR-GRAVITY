@@ -35,6 +35,12 @@ class SaveData {
   // Lifetime stats
   Map<String, int> totals = {};
 
+  // Daily missions (reset when the day changes)
+  int missionDay = 0; // yyyymmdd
+  Map<String, int> missionProgress = {};
+  Set<String> missionClaimed = {};
+  bool missionBonusClaimed = false;
+
   int total(String k) => totals[k] ?? 0;
   void addTotal(String k, int v) => totals[k] = total(k) + v;
   void maxTotal(String k, int v) {
@@ -85,6 +91,10 @@ class SaveData {
         'endlessBestCombo': endlessBestCombo,
         'endlessRuns': endlessRuns,
         'totals': totals,
+        'missionDay': missionDay,
+        'missionProgress': missionProgress,
+        'missionClaimed': missionClaimed.toList(),
+        'missionBonusClaimed': missionBonusClaimed,
       };
 
   static SaveData fromJson(Map<String, dynamic>? m) {
@@ -118,6 +128,10 @@ class SaveData {
     d.endlessBestCombo = Json.i(m, 'endlessBestCombo', 0);
     d.endlessRuns = Json.i(m, 'endlessRuns', 0);
     d.totals = Json.intMap(m, 'totals');
+    d.missionDay = Json.i(m, 'missionDay', 0);
+    d.missionProgress = Json.intMap(m, 'missionProgress');
+    d.missionClaimed = Json.strSet(m, 'missionClaimed');
+    d.missionBonusClaimed = Json.b(m, 'missionBonusClaimed', false);
     // Consistency: unlocked level is at least one past the furthest cleared.
     final furthest = d.stars.lastIndexWhere((s) => s > 0) + 1;
     if (furthest + 1 > d.unlockedLevel) d.unlockedLevel = (furthest + 1).clamp(1, 1000);

@@ -16,6 +16,7 @@ import '../endless/endless_screen.dart';
 import '../gameplay/gameplay_screen.dart';
 import '../level_map/level_map_screen.dart';
 import '../settings/settings_screen.dart';
+import 'missions_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -117,7 +118,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
+                        const FadeSlideIn(delay: Duration(milliseconds: 180), child: MissionsCard()),
+                        const SizedBox(height: 10),
                         FadeSlideIn(
                           delay: const Duration(milliseconds: 220),
                           child: Row(children: [

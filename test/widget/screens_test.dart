@@ -10,7 +10,28 @@ import 'package:color_gravity/screens/result/result_screen.dart';
 import 'package:color_gravity/screens/settings/settings_screen.dart';
 import 'package:color_gravity/services/app_services.dart';
 import 'package:flutter/material.dart';
+import 'package:color_gravity/core/constants/app_config.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:url_launcher_platform_interface/link.dart';
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
+
+/// Records URLs and reports "could not open" (as if offline).
+class FakeLauncher extends UrlLauncherPlatform with MockPlatformInterfaceMixin {
+  final List<String> opened = [];
+  @override
+  LinkDelegate? get linkDelegate => null;
+  @override
+  Future<bool> canLaunch(String url) async => false;
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async {
+    opened.add(url);
+    return false;
+  }
+
+  @override
+  Future<bool> supportsMode(PreferredLaunchMode mode) async => true;
+}
 
 Widget wrap(Widget child, AppServices s) => AppScope(services: s, child: MaterialApp(theme: AppTheme.build(), home: child));
 
@@ -150,11 +171,51 @@ void main() {
     await t.scrollUntilVisible(find.text('Privacy Policy'), 200, scrollable: find.byType(Scrollable).first);
     await t.ensureVisible(find.text('Privacy Policy'));
     await t.pump();
+    final launcher = FakeLauncher();
+    UrlLauncherPlatform.instance = launcher;
     await t.tap(find.text('Privacy Policy'));
     await settle(t, 1500);
+    expect(launcher.opened, [AppConfig.privacyPolicyUrl]);
     expect(find.text('Overview'), findsOneWidget);
     expect(find.text('Advertising', skipOffstage: false), findsOneWidget);
     expect(find.textContaining('Terms'), findsNothing);
     expect(t.takeException(), isNull);
+  });
+
+  testWidgets('Home missions card opens the claim sheet', (t) async {
+    await phone(t);
+    final s = AppServices.offline();
+    await t.pumpWidget(wrap(const HomeScreen(), s));
+    await settle(t);
+    expect(find.text('Daily Missions'), findsOneWidget);
+    await t.tap(find.text('Daily Missions'));
+    await settle(t, 1200);
+    expect(find.text('New missions every day'), findsOneWidget);
+    expect(find.text('Complete all 3 · bonus'), findsOneWidget);
+    for (final m in s.progress.todaysMissions) {
+      expect(find.text(m.title), findsOneWidget);
+    }
+    expect(t.takeException(), isNull);
+  });
+
+  testWidgets('Failure screen offers Retry from Checkpoint when one was reached', (t) async {
+    await phone(t);
+    final s = AppServices.offline();
+    var fromCp = false, restart = false;
+    await t.pumpWidget(wrap(
+      FailureScreen(
+        stats: RunStats()..failReason = 'Hit the spikes',
+        progress: 0.7,
+        onRetry: () => restart = true,
+        onRetryCheckpoint: () => fromCp = true,
+        onHome: () {},
+      ),
+      s,
+    ));
+    await settle(t, 1200);
+    await t.tap(find.text('Retry from Checkpoint'));
+    await t.tap(find.text('Restart Level'));
+    expect(fromCp, isTrue);
+    expect(restart, isTrue);
   });
 }

@@ -324,9 +324,22 @@ class LevelGenerator {
   }
 
   // ------------------------------------------------------------ objectives
+  /// Orbs that match the color the player is guaranteed to have when they
+  /// reach them (start color, then each unavoidable color band), plus wildcards.
+  static int matchableOrbs(LevelConfig c, LevelPlan plan) {
+    var current = c.startingColor;
+    var n = 0;
+    for (final e in plan.entities) {
+      if (e.kind == EntityKind.colorSwitch && e.fullWidth && e.color != null) current = e.color!;
+      if (e.kind == EntityKind.orb && (e.wildcard || e.color == current)) n++;
+    }
+    return n;
+  }
+
   static void assignObjectives(LevelConfig c, LevelPlan plan) {
     final coins = plan.ofKind(EntityKind.coin).length;
-    final orbs = plan.ofKind(EntityKind.orb).length;
+    // Only orbs the player can actually match count toward color goals.
+    final orbs = matchableOrbs(c, plan);
     final gates = plan.ofKind(EntityKind.gate).length;
     final mergeSegs = c.segments.where((s) => s.type == SegmentType.merge).length;
     final rng = math.Random(c.seed ^ 0x5eed);
@@ -344,7 +357,7 @@ class LevelGenerator {
       final options = <Objective>[
         Objective(ObjectiveType.collectCoins, target: math.max(5, (coins * 0.5).floor())),
         Objective(ObjectiveType.gravityShifts, target: math.min(12, 4 + level ~/ 60)),
-        if (orbs >= 8) Objective(ObjectiveType.colorMatches, target: math.max(3, (orbs * 0.3).floor())),
+        if (orbs >= 8) Objective(ObjectiveType.colorMatches, target: math.max(3, (orbs * 0.4).floor())),
         if (mergeSegs > 0 && c.has(Mechanic.merge)) Objective(ObjectiveType.merges, target: math.min(2, mergeSegs)),
         if (c.swipeEnabled && c.has(Mechanic.swipeVertical))
           const Objective(ObjectiveType.useGravity, target: 2, dir: GravityDir.up),
@@ -354,7 +367,7 @@ class LevelGenerator {
 
     final star2Options = <Objective>[
       Objective(ObjectiveType.collectCoins, target: math.max(4, (coins * (0.5 + 0.3 * c.difficulty)).floor())),
-      if (orbs >= 6) Objective(ObjectiveType.colorMatches, target: math.max(3, (orbs * 0.4).floor())),
+      if (orbs >= 6) Objective(ObjectiveType.colorMatches, target: math.max(3, (orbs * 0.5).floor())),
       if (level >= 8) Objective(ObjectiveType.maxCombo, target: math.min(8, 3 + level ~/ 80)),
     ];
     final star3Options = <Objective>[

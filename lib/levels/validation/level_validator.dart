@@ -4,6 +4,7 @@ import '../../core/constants/game_constants.dart';
 import '../../core/models/game_color.dart';
 import '../../game/entities/entity.dart';
 import '../models/level_config.dart';
+import '../generators/level_generator.dart';
 import '../segments/segment_builder.dart';
 
 class ValidationReport {
@@ -108,7 +109,7 @@ class LevelValidator {
 
     // 6. Objectives achievable
     final coins = ents.where((e) => e.kind == EntityKind.coin).length;
-    final orbs = ents.where((e) => e.kind == EntityKind.orb).length;
+    final orbs = LevelGenerator.matchableOrbs(c, plan);
     for (final o in [...c.objectives, ...c.starObjectives]) {
       final ok = switch (o.type) {
         ObjectiveType.collectCoins => o.target <= coins,
